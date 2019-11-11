@@ -18,6 +18,9 @@ talmud_titles = {}
 for tractate_title in library.get_indexes_in_category("Talmud"):
     he_title = library.get_index(tractate_title).get_title("he")
     talmud_titles[he_title]=tractate_title
+talmud_words=[u'גמרא',u'גמ\'',u'מתניתין',u'מתני\'',u'שם',u'בתר"י',u'בהרי"ף',u'ברי"ף',u'בר"ן']
+tos_words=[u'תוס\'',u'תוספות',u'תד"ה',u'בתד"ה',u'בתוס\' ד"ה']
+
 def not_blank(s):
     while " " in s:
         s = s.replace(u" ",u"")
@@ -40,19 +43,43 @@ def make_talmud_array(book):
             return_array[index].append([])
     return return_array
 def dh_extract_method(some_string):
-    some_string=some_string.replace(u'גמרא ',u'').replace(u',',u'')
+    for word in talmud_words:
+        some_string=some_string.replace(word, u'')
+    for word in tos_words:
+        some_string=some_string.replace(word,u'')
+    some_string=some_string.replace(u'גמרא ',u'').replace(u',',u'').replace(u'רש"י',u'')
     if u'@11' and u'@33' in some_string:
         if len(re.search(ur'(?<=@11).*?(?=@33)',some_string).group().split(u' '))>4:
             return re.search(ur'(?<=@11).*?(?=@33)',some_string).group()
+    some_string=re.sub(ur'@\d+',u'',some_string)
     if u'וכו\'' in u' '.join(some_string.split(u' ')[:10]):
         return some_string[:some_string.index(u'וכו\'')-1]
     return ' '.join(some_string.split(u' ')[:8])
+def tos_filter(s):
+    for word in tos_words:
+        if re.search(ur'^\S*'+word, s):
+            return True
+    return False
+def tal_filter(s):
+    for word in talmud_words:
+        if re.search(ur'^\S'+word, s):
+            return True
+    return False
+def r_filter(s):
+    if re.search(ur'^\S*'+u'רש"י', s):
+        return True
+    else:
+        return False
+    
 def remove_extra_space(string):
     while u"  " in string:
         string = string.replace(u"  ",u" ")
     return string
 def base_tokenizer(some_string):
-    return filter(lambda(x): x!=u'',remove_extra_space(strip_nekud(some_string).replace(u"<b>",u"").replace(u"</b>",u"").replace(".","").replace(u"\n",u"")).split(u" "))
+    return_s= filter(lambda(x): x!=u'',remove_extra_space(strip_nekud(some_string).replace(u"<b>",u"").replace(u"</b>",u"").replace(".","").replace(u"\n",u"")).split(u" "))
+    if len(return_s)>0:
+        return return_s
+    return "EMPTY"
 class Tractate:
     def __init__(self, tractate_name):
         self.he_tractate_name=tractate_name
@@ -107,24 +134,74 @@ for rae_file in os.listdir('files'):
                         amud_box[-1]+=u'<br>'+clean_line(line)
         text_list.append([current_tractate, current_daf, current_amud, amud_box])
         
-for tractate in tractate_list:
+for tractate in tractate_list:    
     myfile = open('output/RabbiEigerLinks_{}.tsv'.format(tractate),'w')
+    myfile.write('Talmud Ref(unmatched)\tComment Text\tTalmud Ref(matched)\tRashi Ref\tTosafot Ref\n')
     myfile.close()
 for set_of_comments in text_list:
-    print 'matching {}.{}{}...'.format(set_of_comments[0],set_of_comments[1],set_of_comments[2])
+    comment_link_list=[[] for x in range(len(set_of_comments[3]))]
+    print 'matching TALMUD {}.{}{}...'.format(set_of_comments[0],set_of_comments[1],set_of_comments[2])
     tractate_ref=Ref('{}.{}{}'.format(set_of_comments[0],set_of_comments[1],set_of_comments[2]))
     tractate_chunk = TextChunk(tractate_ref,"he")
-    match_set = match_ref(tractate_chunk,set_of_comments[3],base_tokenizer,dh_extract_method=dh_extract_method,verbose=False)
-    with open('output/RabbiEigerLinks_{}.tsv'.format(set_of_comments[0]),'a') as myfile:
-        for comment,base in zip(set_of_comments[3], match_set['matches']):
-           #print "COMMENT\/"
-           #print comment 
-           if base:
-             myfile.write('{} {}{}\t{}\t{}\n'.format(set_of_comments[0],set_of_comments[1],set_of_comments[2],base,comment.encode('utf','replace')))
-           else:
-             myfile.write('{} {}{}\tNULL\t{}\n'.format(set_of_comments[0],set_of_comments[1],set_of_comments[2],comment.encode('utf','replace')))
-           
+    if len(tractate_chunk.text)<1:
+        match_set={'matches':[None for x in range(len(set_of_comments[3]))]}
+    else:
+        match_set = match_ref(tractate_chunk,set_of_comments[3],base_tokenizer,dh_extract_method=dh_extract_method,verbose=False)
+    for index, (comment,base) in enumerate(zip(set_of_comments[3], match_set['matches'])):
+        if not tos_filter(comment) and not r_filter(comment):
+            if base:
+                comment_link_list[index].append(base)
+            else:
+                comment_link_list[index].append("X")
+                
+        else:
+            comment_link_list[index].append("-")
     
+    print 'matching RASHI {}.{}{}...'.format(set_of_comments[0],set_of_comments[1],set_of_comments[2])    
+    rashi_ref=Ref('Rashi on {}.{}{}'.format(set_of_comments[0],set_of_comments[1],set_of_comments[2]))
+    rashi_chunk = TextChunk(rashi_ref,"he")
+    if len(rashi_chunk.text)<1:
+        match_set={'matches':[None for x in range(len(set_of_comments[3]))]}
+    else:
+        match_set = match_ref(rashi_chunk,set_of_comments[3],base_tokenizer,dh_extract_method=dh_extract_method,verbose=False)
+    for index, (comment,base) in enumerate(zip(set_of_comments[3], match_set['matches'])):
+        if r_filter(comment):
+            if base:
+                comment_link_list[index].append(base)
+            else:
+                comment_link_list[index].append("X")
+                
+        else:
+            comment_link_list[index].append("-")
+    
+    print 'matching TOSAFOT {}.{}{}...'.format(set_of_comments[0],set_of_comments[1],set_of_comments[2])
+    last_ref=False
+    tos_ref=Ref('Tosafot on {}.{}{}'.format(set_of_comments[0],set_of_comments[1],set_of_comments[2]))
+    tos_chunk = TextChunk(tos_ref,"he")
+    if len(tos_chunk.text)<1:
+        match_set={'matches':[None for x in range(len(set_of_comments[3]))]}
+    else:
+        match_set = match_ref(tos_chunk,set_of_comments[3],base_tokenizer,dh_extract_method=dh_extract_method,verbose=False)
+    for index, (comment,base) in enumerate(zip(set_of_comments[3], match_set['matches'])):
+        last_ref=False
+        if tos_filter(comment):
+            if base:
+                comment_link_list[index].append(base)
+                last_ref=base
+            else:
+                comment_link_list[index].append("X")
+        else:
+            if re.search(ur'^\S*'+u'בא"ד',set_of_comments[3][index]):
+                comment_link_list[index].append(last_ref)
+            else:
+                comment_link_list[index].append("-")
+    #"""       
+    with open('output/RabbiEigerLinks_{}.tsv'.format(set_of_comments[0]),'a') as myfile:        
+        for comment, links in zip(set_of_comments[3], comment_link_list):
+            print links
+            myfile.write('{} {}{}\t{}\t{}\t{}\t{}\n'.format(set_of_comments[0],set_of_comments[1],set_of_comments[2],comment.encode('utf','replace'), links[0],links[1],links[2]))
+    #"""
+    #TALMUD, RASHI, TOSAFOT
     """
     if "comment_refs" in matches:
         for link_index, (base, comment) in enumerate(zip(matches["matches"],matches["comment_refs"])):
@@ -160,6 +237,15 @@ from beggining of vol iii:
 @77 סוף מודגש
 @88 אות לפני תחילת קטע
 @99 כותר סיום
+
+    with open('output/RabbiEigerLinks_{}.tsv'.format(set_of_comments[0]),'a') as myfile:
+
+           #print "COMMENT\/"
+           #print comment 
+           if base:
+             myfile.write('{} {}{}\t{}\t{}\n'.format(set_of_comments[0],set_of_comments[1],set_of_comments[2],base,comment.encode('utf','replace')))
+           else:
+             myfile.write('{} {}{}\tNULL\t{}\n'.format(set_of_comments[0],set_of_comments[1],set_of_comments[2],comment.encode('utf','replace')))
 
 
 @00חידושי רבי עקיבא אייגר 
