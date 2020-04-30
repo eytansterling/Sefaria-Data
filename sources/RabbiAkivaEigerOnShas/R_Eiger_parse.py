@@ -19,7 +19,7 @@ for tractate_title in library.get_indexes_in_category("Talmud"):
     he_title = library.get_index(tractate_title).get_title("he")
     talmud_titles[he_title]=tractate_title
 talmud_words=[u'גמרא',u'גמ\'',u'מתניתין',u'מתני\'',u'שם',u'בתר"י',u'בהרי"ף',u'ברי"ף',u'בר"ן']
-tos_words=[u'תוס\'',u'תוספות',u'תד"ה',u'בתד"ה',u'בתוס\' ד"ה']
+tos_words=[u'תוס\' ד"ה',u'תוס\'',u'תוספות',u'תד"ה',u'בתד"ה',u'בתוס\' ד"ה']
 
 def not_blank(s):
     while " " in s:
@@ -56,6 +56,7 @@ def dh_extract_method(some_string):
         return some_string[:some_string.index(u'וכו\'')-1]
     return ' '.join(some_string.split(u' ')[:8])
 def tos_filter(s):
+    s = re.sub(ur'^שם ',u'',s)
     for word in tos_words:
         if re.search(ur'^\S*'+word, s):
             return True
@@ -67,7 +68,8 @@ def tal_filter(s):
             return True
     return False
 def r_filter(s):
-    if re.search(ur'^\S*'+u'רש"י', s):
+    s = re.sub(ur'^שם ',u'',s)
+    if re.search(ur'^\S*ב?'+u'רש"י', s):
         return True
     else:
         return False
@@ -150,7 +152,7 @@ for set_of_comments in text_list:
         match_set = match_ref(tractate_chunk,set_of_comments[3],base_tokenizer,dh_extract_method=dh_extract_method,verbose=False)
     previous_link=None
     for index, (comment,base) in enumerate(zip(set_of_comments[3], match_set['matches'])):
-        if tal_filter(comment):
+        if tal_filter(comment) or (not tos_filter(comment) and not r_filter(comment) and index==0):
             if base:
                 comment_link_list[index].append(base.normal())
                 previous_link=base.normal()
@@ -188,8 +190,8 @@ for set_of_comments in text_list:
         match_set={'matches':[None for x in range(len(set_of_comments[3]))]}
     else:
         match_set = match_ref(tos_chunk,set_of_comments[3],base_tokenizer,dh_extract_method=dh_extract_method,verbose=False)
+    last_ref=False
     for index, (comment,base) in enumerate(zip(set_of_comments[3], match_set['matches'])):
-        last_ref=False
         if tos_filter(comment):
             if base:
                 comment_link_list[index].append(base.normal())
@@ -197,10 +199,10 @@ for set_of_comments in text_list:
             else:
                 comment_link_list[index].append("X")
         else:
-            if re.search(ur'^\S*'+u'בא"ד',set_of_comments[3][index]):
+            if re.search(ur'^\S*'+u'בא"ד',set_of_comments[3][index]) and last_ref:
                 comment_link_list[index].append(last_ref)
             else:
-                comment_link_list[index].append("-")
+                comment_link_list[index].append("X")
     #"""       
     with open('output/RabbiEigerLinks_{}.tsv'.format(set_of_comments[0]),'a') as myfile:        
         for comment, links in zip(set_of_comments[3], comment_link_list):
